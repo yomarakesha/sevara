@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="SillBridge — Learn IT from beginner to senior. Frontend, Backend, ML, DevOps and more. English, Russian, Turkmen." />
+  <title>SillBridge — From Zero to Senior Developer</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%236366F1'/><text y='.9em' font-size='60' x='10' fill='white' font-weight='bold'>SB</text></svg>">
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+</head>
+<body>
+
+  <!-- NAVIGATION -->
+  <div id="nav"></div>
+
+  <!-- MAIN APP -->
+  <main id="app">
+    <div style="display:flex;align-items:center;justify-content:center;height:80vh;flex-direction:column;gap:16px;">
+      <div style="width:40px;height:40px;border:3px solid #6366F1;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;"></div>
+      <p style="color:#6B7280;font-family:Outfit,sans-serif;">Loading SillBridge...</p>
+    </div>
+  </main>
+
+  <!-- TOAST CONTAINER -->
+  <div id="toast-container"></div>
+
+  <!-- SCRIPTS (order matters) -->
+  <!-- Optional: set window.SILLBRIDGE_API = "https://your-backend.com/api" in config.js -->
+  <script src="js/config.js" onerror="void 0"></script>
+  <script src="js/data.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/games.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/app.js"></script>
+
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</body>
+</html>
