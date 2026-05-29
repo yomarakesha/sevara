@@ -9,9 +9,14 @@ const path    = require('path');
 const authRoutes     = require('./routes/auth');
 const progressRoutes = require('./routes/progress');
 const pool           = require('./db/pool');
+const cronJobs       = require('./services/cron');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+
+// Trust the first proxy so that rate-limit / req.ip work correctly
+// when the app is deployed behind one (Render, Fly, Heroku, nginx).
+app.set('trust proxy', 1);
 
 // ── Middleware ────────────────────────────────
 app.use(cors({
@@ -81,4 +86,11 @@ app.listen(PORT, () => {
   console.log(`  Auth:    http://localhost:${PORT}/api/auth`);
   console.log(`  Progress:http://localhost:${PORT}/api/progress`);
   console.log('');
+
+  // Schedule background jobs (daily/weekly XP reset, token cleanup)
+  try {
+    cronJobs.start();
+  } catch (e) {
+    console.error('Cron failed to start:', e.message);
+  }
 });

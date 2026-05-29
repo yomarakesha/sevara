@@ -129,68 +129,67 @@ const Store = (() => {
   }
 
   // ── PROGRESS ──────────────────────────────────
-  async function completeLesson(lessonId, xpGained) {
+  // XP is computed server-side now. We do an optimistic UI update with
+  // the client-side estimate, then reconcile against the server's reply.
+  function applyServerXP(data) {
     if (!_currentUser) return;
-    // Optimistic local update
+    if (data.xp        !== undefined) _currentUser.xp       = data.xp;
+    if (data.level     !== undefined) _currentUser.level    = data.level;
+    if (data.daily_xp  !== undefined) _currentUser.dailyXP  = data.daily_xp;
+    if (data.weekly_xp !== undefined) _currentUser.weeklyXP = data.weekly_xp;
+    if (data.badges) _currentUser.badges = data.badges;
+    localStorage.setItem('sb_user', JSON.stringify(_currentUser));
+  }
+
+  async function completeLesson(lessonId, xpEstimate = 0) {
+    if (!_currentUser) return;
     if (!_currentUser.completedLessons.includes(lessonId)) {
       _currentUser.completedLessons.push(lessonId);
-      _currentUser.xp += xpGained;
-      _currentUser.dailyXP  = (_currentUser.dailyXP  || 0) + xpGained;
-      _currentUser.weeklyXP = (_currentUser.weeklyXP || 0) + xpGained;
+      _currentUser.xp       += xpEstimate;
+      _currentUser.dailyXP   = (_currentUser.dailyXP  || 0) + xpEstimate;
+      _currentUser.weeklyXP  = (_currentUser.weeklyXP || 0) + xpEstimate;
     }
     localStorage.setItem('sb_user', JSON.stringify(_currentUser));
 
     try {
-      const data = await apiFetch('/progress/lesson', {
-        method: 'POST',
-        body: { lessonId, xp: xpGained },
-      });
-      if (data.badges) _currentUser.badges = data.badges;
-      localStorage.setItem('sb_user', JSON.stringify(_currentUser));
+      const data = await apiFetch('/progress/lesson', { method: 'POST', body: { lessonId } });
+      applyServerXP(data);
     } catch (err) {
       console.warn('Lesson sync failed:', err.message);
     }
     return _currentUser;
   }
 
-  async function completeQuiz(quizId, score, xpGained) {
+  async function completeQuiz(quizId, score, xpEstimate = 0) {
     if (!_currentUser) return;
     const existing = _currentUser.completedQuizzes.find(q => q.id === quizId);
     if (!existing) {
       _currentUser.completedQuizzes.push({ id: quizId, score, date: new Date().toISOString() });
-      _currentUser.xp += xpGained;
-      _currentUser.dailyXP = (_currentUser.dailyXP || 0) + xpGained;
+      _currentUser.xp      += xpEstimate;
+      _currentUser.dailyXP  = (_currentUser.dailyXP || 0) + xpEstimate;
     }
     localStorage.setItem('sb_user', JSON.stringify(_currentUser));
 
     try {
-      const data = await apiFetch('/progress/quiz', {
-        method: 'POST',
-        body: { quizId, score, xp: xpGained },
-      });
-      if (data.badges) _currentUser.badges = data.badges;
-      localStorage.setItem('sb_user', JSON.stringify(_currentUser));
+      const data = await apiFetch('/progress/quiz', { method: 'POST', body: { quizId, score } });
+      applyServerXP(data);
     } catch (err) {
       console.warn('Quiz sync failed:', err.message);
     }
     return _currentUser;
   }
 
-  async function completeProject(projectId, xpGained) {
+  async function completeProject(projectId, xpEstimate = 0) {
     if (!_currentUser) return;
     if (!_currentUser.completedProjects.includes(projectId)) {
       _currentUser.completedProjects.push(projectId);
-      _currentUser.xp += xpGained;
+      _currentUser.xp += xpEstimate;
     }
     localStorage.setItem('sb_user', JSON.stringify(_currentUser));
 
     try {
-      const data = await apiFetch('/progress/project', {
-        method: 'POST',
-        body: { projectId, xp: xpGained },
-      });
-      if (data.badges) _currentUser.badges = data.badges;
-      localStorage.setItem('sb_user', JSON.stringify(_currentUser));
+      const data = await apiFetch('/progress/project', { method: 'POST', body: { projectId } });
+      applyServerXP(data);
     } catch (err) {
       console.warn('Project sync failed:', err.message);
     }
@@ -217,12 +216,72 @@ const Store = (() => {
       const data = await apiFetch('/progress/leaderboard');
       return data.leaderboard;
     } catch {
-      // Fallback: return just the current user
       if (_currentUser) {
         return [{ name: _currentUser.name, xp: _currentUser.xp, level: _currentUser.level, branch: _currentUser.branch, badges: _currentUser.badges?.length || 0 }];
       }
       return [];
     }
+  }
+
+  async function getFriendsLeaderboard() {
+    try {
+      const data = await apiFetch('/progress/leaderboard/friends');
+      return data.leaderboard;
+    } catch {
+      return [];
+    }
+  }
+
+  // ── ACTIVITY HISTORY (GitHub-style graph) ─────
+  async function getActivity(days = 365) {
+    try {
+      const data = await apiFetch(`/progress/activity?days=${days}`);
+      return data.activity || [];
+    } catch {
+      return [];
+    }
+  }
+
+  // ── FRIENDS / STUDY GROUPS ────────────────────
+  async function getFriends() {
+    try { return await apiFetch('/progress/friends'); }
+    catch { return { friends: [], incoming: [], outgoing: [] }; }
+  }
+
+  async function addFriend(email) {
+    try {
+      await apiFetch('/progress/friends', { method: 'POST', body: { email } });
+      return { success: true };
+    } catch (err) { return { error: err.message }; }
+  }
+
+  async function acceptFriend(friendshipId) {
+    try {
+      await apiFetch(`/progress/friends/${friendshipId}`, { method: 'PATCH' });
+      return { success: true };
+    } catch (err) { return { error: err.message }; }
+  }
+
+  async function removeFriend(friendshipId) {
+    try {
+      await apiFetch(`/progress/friends/${friendshipId}`, { method: 'DELETE' });
+      return { success: true };
+    } catch (err) { return { error: err.message }; }
+  }
+
+  // ── PASSWORD RESET ────────────────────────────
+  async function forgotPassword(email) {
+    try {
+      await apiFetch('/auth/forgot-password', { method: 'POST', body: { email } });
+      return { success: true };
+    } catch (err) { return { error: err.message }; }
+  }
+
+  async function resetPassword(token, password) {
+    try {
+      await apiFetch('/auth/reset-password', { method: 'POST', body: { token, password } });
+      return { success: true };
+    } catch (err) { return { error: err.message }; }
   }
 
   // ── PREFERENCES (local-only — instant UI) ─────
@@ -242,7 +301,10 @@ const Store = (() => {
     register, login, logout,
     getCurrentUser, refreshUser, updateUser,
     completeLesson, completeQuiz, completeProject, awardBadge,
-    getLeaderboard,
+    getLeaderboard, getFriendsLeaderboard,
+    getActivity,
+    getFriends, addFriend, acceptFriend, removeFriend,
+    forgotPassword, resetPassword,
     getLang, setLang, getDark, setDark,
   };
 

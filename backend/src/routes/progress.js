@@ -4,29 +4,39 @@
 //  POST /api/progress/quiz
 //  POST /api/progress/project
 //  POST /api/progress/badge
-//  PATCH /api/progress/profile   (branch, name, lang, darkMode)
+//  PATCH /api/progress/profile
 //  GET  /api/progress/leaderboard
+//  GET  /api/progress/leaderboard/friends
+//  GET  /api/progress/activity         (XP per day, last 365 days)
+//  GET  /api/progress/friends          (friend list)
+//  POST /api/progress/friends          (add friend by email)
+//  PATCH /api/progress/friends/:id     (accept friend request)
+//  DELETE /api/progress/friends/:id    (remove friend)
+//  GET  /api/progress/friends/requests (incoming requests)
 // ═══════════════════════════════════════════════
 const router = require('express').Router();
 const pool   = require('../db/pool');
 const authMW = require('../middleware/auth');
+const { calcLevel, xpForLesson, xpForQuiz, xpForProject } = require('../services/xp');
 
 // All progress routes require a valid JWT
 router.use(authMW);
 
 // ── helpers ──────────────────────────────────
-// XP thresholds matching the frontend curriculum (10 levels)
-const XP_THRESHOLDS = [0, 150, 350, 600, 900, 1150, 1350, 1650, 1950, 2300];
-
-function calcLevel(xp) {
-  let level = 1;
-  for (let i = XP_THRESHOLDS.length - 1; i >= 0; i--) {
-    if (xp >= XP_THRESHOLDS[i]) { level = i + 1; break; }
-  }
-  return Math.min(level, 10);
+async function recordDailyXP(client, userId, xp) {
+  if (!xp) return;
+  const today = new Date().toISOString().split('T')[0];
+  await client.query(
+    `INSERT INTO xp_history (user_id, day, xp_gained)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, day)
+     DO UPDATE SET xp_gained = xp_history.xp_gained + EXCLUDED.xp_gained`,
+    [userId, today, xp]
+  );
 }
 
 async function addXP(client, userId, xp) {
+  if (!xp) return;
   const { rows } = await client.query('SELECT xp FROM users WHERE id=$1', [userId]);
   const newXP = (rows[0]?.xp || 0) + xp;
   const newLevel = calcLevel(newXP);
@@ -40,6 +50,7 @@ async function addXP(client, userId, xp) {
      WHERE id = $4`,
     [newXP, newLevel, xp, userId]
   );
+  await recordDailyXP(client, userId, xp);
 }
 
 async function awardBadge(client, userId, badgeId) {
@@ -83,10 +94,18 @@ async function fetchBadges(userId) {
   return rows.map(r => r.badge_id);
 }
 
+async function fetchUserXPSummary(userId) {
+  const { rows } = await pool.query('SELECT xp, level, daily_xp, weekly_xp FROM users WHERE id=$1', [userId]);
+  return rows[0] || null;
+}
+
 // ── POST /api/progress/lesson ─────────────────
 router.post('/lesson', async (req, res) => {
-  const { lessonId, xp = 0 } = req.body;
+  const { lessonId } = req.body;
   if (!lessonId) return res.status(400).json({ error: 'lessonId required' });
+
+  // Server-side XP — ignore client-provided value
+  const xp = xpForLesson(lessonId);
 
   const client = await pool.connect();
   try {
@@ -105,8 +124,11 @@ router.post('/lesson', async (req, res) => {
 
     await client.query('COMMIT');
 
-    const badges = await fetchBadges(req.userId);
-    res.json({ success: true, badges });
+    const [badges, summary] = await Promise.all([
+      fetchBadges(req.userId),
+      fetchUserXPSummary(req.userId),
+    ]);
+    res.json({ success: true, badges, xpAwarded: inserted.rows.length ? xp : 0, ...summary });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Complete lesson error:', err);
@@ -118,9 +140,12 @@ router.post('/lesson', async (req, res) => {
 
 // ── POST /api/progress/quiz ───────────────────
 router.post('/quiz', async (req, res) => {
-  const { quizId, score, xp = 0 } = req.body;
+  const { quizId, score } = req.body;
   if (!quizId || score === undefined)
     return res.status(400).json({ error: 'quizId and score required' });
+
+  const safeScore = Math.max(0, Math.min(100, parseInt(score) || 0));
+  const xp = xpForQuiz(quizId, safeScore);
 
   const client = await pool.connect();
   try {
@@ -129,19 +154,22 @@ router.post('/quiz', async (req, res) => {
     const inserted = await client.query(
       `INSERT INTO completed_quizzes (user_id, quiz_id, score, xp_gained)
        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id`,
-      [req.userId, quizId, score, xp]
+      [req.userId, quizId, safeScore, xp]
     );
 
     if (inserted.rows.length) {
       await addXP(client, req.userId, xp);
-      if (score === 100) await awardBadge(client, req.userId, 'perfect_quiz');
+      if (safeScore === 100) await awardBadge(client, req.userId, 'perfect_quiz');
       await checkBadges(client, req.userId);
     }
 
     await client.query('COMMIT');
 
-    const badges = await fetchBadges(req.userId);
-    res.json({ success: true, badges });
+    const [badges, summary] = await Promise.all([
+      fetchBadges(req.userId),
+      fetchUserXPSummary(req.userId),
+    ]);
+    res.json({ success: true, badges, xpAwarded: inserted.rows.length ? xp : 0, ...summary });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Complete quiz error:', err);
@@ -153,8 +181,10 @@ router.post('/quiz', async (req, res) => {
 
 // ── POST /api/progress/project ────────────────
 router.post('/project', async (req, res) => {
-  const { projectId, xp = 0 } = req.body;
+  const { projectId } = req.body;
   if (!projectId) return res.status(400).json({ error: 'projectId required' });
+
+  const xp = xpForProject(projectId);
 
   const client = await pool.connect();
   try {
@@ -174,8 +204,11 @@ router.post('/project', async (req, res) => {
 
     await client.query('COMMIT');
 
-    const badges = await fetchBadges(req.userId);
-    res.json({ success: true, badges });
+    const [badges, summary] = await Promise.all([
+      fetchBadges(req.userId),
+      fetchUserXPSummary(req.userId),
+    ]);
+    res.json({ success: true, badges, xpAwarded: inserted.rows.length ? xp : 0, ...summary });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Complete project error:', err);
@@ -206,7 +239,6 @@ router.patch('/profile', async (req, res) => {
   const values  = [];
   let   idx     = 1;
 
-  // Map camelCase → snake_case
   const map = { darkMode: 'dark_mode', lang: 'lang', branch: 'branch', name: 'name', level: 'level' };
 
   for (const [key, col] of Object.entries(map)) {
@@ -253,6 +285,158 @@ router.get('/leaderboard', async (req, res) => {
     }))});
   } catch (err) {
     console.error('Leaderboard error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── GET /api/progress/leaderboard/friends ────
+// Private leaderboard for the current user's accepted friends + themselves
+router.get('/leaderboard/friends', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      WITH circle AS (
+        SELECT $1::int AS id
+        UNION
+        SELECT friend_id FROM friendships WHERE user_id = $1 AND status = 'accepted'
+        UNION
+        SELECT user_id   FROM friendships WHERE friend_id = $1 AND status = 'accepted'
+      )
+      SELECT u.id, u.name, u.xp, u.level, u.branch,
+             COUNT(DISTINCT ub.badge_id) AS badge_count
+      FROM users u
+      JOIN circle c ON c.id = u.id
+      LEFT JOIN user_badges ub ON ub.user_id = u.id
+      GROUP BY u.id
+      ORDER BY u.xp DESC
+    `, [req.userId]);
+    res.json({ leaderboard: rows.map(r => ({
+      name: r.name, xp: r.xp, level: r.level, branch: r.branch,
+      badges: parseInt(r.badge_count),
+    })) });
+  } catch (err) {
+    console.error('Friends leaderboard error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── GET /api/progress/activity ───────────────
+// Returns XP per day for the last `days` days (default 365)
+router.get('/activity', async (req, res) => {
+  const days = Math.max(1, Math.min(parseInt(req.query.days) || 365, 730));
+  try {
+    const { rows } = await pool.query(
+      `SELECT to_char(day, 'YYYY-MM-DD') AS day, xp_gained
+         FROM xp_history
+        WHERE user_id = $1
+          AND day >= CURRENT_DATE - ($2::int - 1)
+        ORDER BY day ASC`,
+      [req.userId, days]
+    );
+    res.json({ activity: rows.map(r => ({ day: r.day, xp: parseInt(r.xp_gained) })), days });
+  } catch (err) {
+    console.error('Activity error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── FRIENDS ──────────────────────────────────
+router.get('/friends', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT u.id, u.name, u.email, u.xp, u.level, u.branch, f.status,
+             CASE WHEN f.user_id = $1 THEN 'outgoing' ELSE 'incoming' END AS direction,
+             f.id AS friendship_id
+      FROM friendships f
+      JOIN users u ON u.id = CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END
+      WHERE (f.user_id = $1 OR f.friend_id = $1)
+      ORDER BY f.created_at DESC
+    `, [req.userId]);
+    res.json({
+      friends:  rows.filter(r => r.status === 'accepted').map(formatFriend),
+      incoming: rows.filter(r => r.status === 'pending' && r.direction === 'incoming').map(formatFriend),
+      outgoing: rows.filter(r => r.status === 'pending' && r.direction === 'outgoing').map(formatFriend),
+    });
+  } catch (err) {
+    console.error('Friends list error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+function formatFriend(r) {
+  return {
+    id: r.id, name: r.name, email: r.email,
+    xp: r.xp, level: r.level, branch: r.branch,
+    friendshipId: r.friendship_id, status: r.status,
+  };
+}
+
+// POST /api/progress/friends — send a request by email
+router.post('/friends', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'email required' });
+
+  try {
+    const { rows: target } = await pool.query('SELECT id FROM users WHERE email=$1', [email]);
+    if (!target.length) return res.status(404).json({ error: 'No user found with that email' });
+    const friendId = target[0].id;
+    if (friendId === req.userId) return res.status(400).json({ error: "You can't add yourself" });
+
+    // Block re-sends in either direction
+    const { rows: existing } = await pool.query(
+      `SELECT id, status FROM friendships
+        WHERE (user_id=$1 AND friend_id=$2) OR (user_id=$2 AND friend_id=$1)`,
+      [req.userId, friendId]
+    );
+    if (existing.length) {
+      const status = existing[0].status;
+      return res.status(409).json({ error: status === 'accepted' ? 'Already friends' : 'Request already pending' });
+    }
+
+    await pool.query(
+      `INSERT INTO friendships (user_id, friend_id, status) VALUES ($1, $2, 'pending')`,
+      [req.userId, friendId]
+    );
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('Friend add error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PATCH /api/progress/friends/:id — accept (target user only)
+router.patch('/friends/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const r = await pool.query(
+      `UPDATE friendships SET status='accepted'
+        WHERE id=$1 AND friend_id=$2 AND status='pending'
+        RETURNING id`,
+      [id, req.userId]
+    );
+    if (!r.rowCount) return res.status(404).json({ error: 'Request not found' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Friend accept error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/progress/friends/:id — remove / decline
+router.delete('/friends/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+  try {
+    const r = await pool.query(
+      `DELETE FROM friendships
+        WHERE id=$1 AND (user_id=$2 OR friend_id=$2)
+        RETURNING id`,
+      [id, req.userId]
+    );
+    if (!r.rowCount) return res.status(404).json({ error: 'Friendship not found' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Friend delete error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

@@ -816,14 +816,557 @@ src/
   }
 };
 
-// Copy frontend curriculum to other branches with different labels
-SB.curriculum.backend = { levels: SB.curriculum.frontend.levels.map(l => ({...l, title: l.title.replace('React','Node.js').replace('Vue','Express').replace('HTML','Python').replace('CSS','SQL')})) };
+// ── BACKEND CURRICULUM ────────────────────────
+SB.curriculum.backend = {
+  levels: [
+    {
+      level: 1, title: 'Backend Foundations', xpRequired: 0, xpReward: 150,
+      lessons: [
+        {
+          id: 'be-1', title: 'What is a Backend?', type: 'lesson', xp: 25,
+          content: `<h2>What is a Backend?</h2>
+<p>The <strong>backend</strong> is the server-side of an application: business logic, databases, authentication, and APIs. Frontends talk to backends over HTTP.</p>
+<div class="key-points"><h4>🔑 Key Pieces</h4><ul>
+<li><strong>HTTP server</strong> — accepts requests, returns responses</li>
+<li><strong>Routes</strong> — URL → handler function mapping</li>
+<li><strong>Database</strong> — persistent storage (Postgres, MongoDB)</li>
+<li><strong>Auth</strong> — verifying who the caller is (JWT, sessions)</li>
+</ul></div>
+<div class="term-box"><strong>📖 Tech Term:</strong> <em>Stateless</em> — each HTTP request carries all info needed to handle it; the server keeps no per-client memory. Makes scaling horizontal.</div>`,
+          tryCode: null
+        },
+        {
+          id: 'be-2', title: 'HTTP Methods & Status Codes', type: 'lesson', xp: 30,
+          content: `<h2>HTTP Methods &amp; Status Codes</h2>
+<div class="code-block"><pre><code>GET     /users        → list users        (200 OK)
+POST    /users        → create a user     (201 Created)
+GET     /users/42     → read user 42      (200 / 404)
+PATCH   /users/42     → partial update    (200 / 422)
+DELETE  /users/42     → remove user 42    (204 No Content)</code></pre></div>
+<div class="key-points"><h4>Status code ranges</h4><ul>
+<li><strong>2xx</strong> success</li>
+<li><strong>3xx</strong> redirect</li>
+<li><strong>4xx</strong> client error (you sent something wrong)</li>
+<li><strong>5xx</strong> server error (it broke)</li>
+</ul></div>`,
+          tryCode: null
+        },
+        {
+          id: 'be-quiz', title: 'Backend Basics Quiz', type: 'quiz', xp: 60,
+          questions: [
+            { q: 'Which method is idempotent and used to read?', options: ['POST','GET','DELETE','PATCH'], answer: 1 },
+            { q: 'What does a 401 status mean?', options: ['Server crash','Unauthorized','Found','Created'], answer: 1 },
+            { q: 'Stateless servers...', options: ['Keep client state in memory','Store nothing between requests','Cannot use databases','Run only on Windows'], answer: 1 },
+            { q: 'Which is NOT a HTTP method?', options: ['FETCH','PATCH','PUT','OPTIONS'], answer: 0 },
+          ]
+        }
+      ]
+    },
+    {
+      level: 2, title: 'Node.js & Express', xpRequired: 150, xpReward: 200,
+      lessons: [
+        {
+          id: 'node-1', title: 'Your First Express Server', type: 'lesson', xp: 30,
+          content: `<h2>Express in 8 lines</h2>
+<div class="code-block"><pre><code>const express = require('express');
+const app = express();
+
+app.use(express.json());
+
+app.get('/hello', (req, res) =&gt; {
+  res.json({ msg: 'Hello, world!' });
+});
+
+app.listen(3000);</code></pre></div>
+<p>Run with <code>node server.js</code> then open <a href="http://localhost:3000/hello">localhost:3000/hello</a>.</p>`,
+          tryCode: { mode: 'js', starter: '// Pretend `app` is an Express app. Build a route.\nconst routes = {};\nfunction get(path, handler) { routes[path] = handler; }\n\n// TODO: register a GET /ping route that returns { pong: true }\n\nconsole.log(routes["/ping"] ? routes["/ping"]() : "no route");',
+            task: 'Register a /ping route that returns { pong: true }.' }
+        },
+        {
+          id: 'node-2', title: 'Middleware', type: 'lesson', xp: 35,
+          content: `<h2>Middleware = functions in a pipeline</h2>
+<div class="code-block"><pre><code>// 1. Logging middleware
+app.use((req, res, next) =&gt; {
+  console.log(req.method, req.path);
+  next();
+});
+
+// 2. Auth middleware
+function requireAuth(req, res, next) {
+  if (!req.headers.authorization) return res.status(401).json({ error: 'no token' });
+  next();
+}
+
+app.get('/me', requireAuth, (req, res) =&gt; res.json({ ok: true }));</code></pre></div>
+<div class="term-box"><strong>📖 Tech Term:</strong> <em>next()</em> — passes control to the next middleware. Forgetting to call it hangs the request.</div>`,
+          tryCode: null
+        },
+        {
+          id: 'node-quiz', title: 'Node.js Quiz', type: 'quiz', xp: 70,
+          questions: [
+            { q: 'How do you parse JSON request bodies in Express?', options: ['app.json()','app.use(express.json())','express.body()','automatic'], answer: 1 },
+            { q: 'Order of middlewares is...', options: ['Random','Top-to-bottom in the file','Alphabetical','Reversed'], answer: 1 },
+            { q: 'What does next(err) do?', options: ['Skip the next handler','Jump to the next error-handling middleware','Send a 500','Crash the server'], answer: 1 },
+            { q: 'Which is NOT an Express response method?', options: ['res.json','res.send','res.status','res.parse'], answer: 3 },
+          ]
+        }
+      ]
+    },
+    {
+      level: 3, title: 'Databases & SQL', xpRequired: 350, xpReward: 250,
+      lessons: [
+        {
+          id: 'db-1', title: 'Relational basics', type: 'lesson', xp: 35,
+          content: `<h2>Tables, rows, columns</h2>
+<div class="code-block"><pre><code>CREATE TABLE users (
+  id         SERIAL PRIMARY KEY,
+  email      VARCHAR(255) UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO users (email) VALUES ('me@example.com');
+SELECT id, email FROM users WHERE email = 'me@example.com';
+UPDATE users SET email = 'new@example.com' WHERE id = 1;
+DELETE FROM users WHERE id = 1;</code></pre></div>`,
+          tryCode: null
+        },
+        {
+          id: 'db-2', title: 'Joins & Foreign Keys', type: 'lesson', xp: 35,
+          content: `<h2>Joins</h2>
+<div class="code-block"><pre><code>SELECT u.name, p.title
+FROM users u
+JOIN posts p ON p.user_id = u.id
+WHERE u.id = 1;</code></pre></div>
+<p>Foreign keys (<code>REFERENCES users(id)</code>) enforce that <code>posts.user_id</code> can only reference real users.</p>`,
+          tryCode: null
+        },
+        {
+          id: 'db-quiz', title: 'SQL Quiz', type: 'quiz', xp: 70,
+          questions: [
+            { q: 'Which SQL keyword filters rows after grouping?', options: ['WHERE','HAVING','FILTER','LIMIT'], answer: 1 },
+            { q: 'A PRIMARY KEY must be...', options: ['Nullable','Unique and not null','A string','Lowercased'], answer: 1 },
+            { q: 'INNER JOIN returns...', options: ['Rows in both tables','Rows in either table','Rows only in the left table','All rows'], answer: 0 },
+            { q: 'What is an index for?', options: ['Beauty','Speeding up lookups','Encryption','Joins only'], answer: 1 },
+          ]
+        }
+      ]
+    },
+    {
+      level: 4, title: 'Building REST APIs', xpRequired: 600, xpReward: 300,
+      lessons: [
+        {
+          id: 'api-be-1', title: 'CRUD endpoints', type: 'lesson', xp: 40,
+          content: `<h2>The five canonical routes</h2>
+<div class="code-block"><pre><code>app.get   ('/posts',     listPosts);     // R - all
+app.get   ('/posts/:id', getPost);       // R - one
+app.post  ('/posts',     createPost);    // C
+app.patch ('/posts/:id', updatePost);    // U
+app.delete('/posts/:id', deletePost);    // D</code></pre></div>
+<p>Always validate input, return proper status codes, and never trust the client.</p>`,
+          tryCode: null
+        },
+        {
+          id: 'api-be-2', title: 'Validation & error handling', type: 'lesson', xp: 40,
+          content: `<h2>Defensive code</h2>
+<div class="code-block"><pre><code>app.post('/posts', (req, res) =&gt; {
+  const { title, body } = req.body;
+  if (!title || title.length &gt; 200)
+    return res.status(422).json({ error: 'Bad title' });
+  // ... insert
+  res.status(201).json({ id: 42 });
+});</code></pre></div>`,
+          tryCode: null
+        },
+        {
+          id: 'api-be-quiz', title: 'REST API Quiz', type: 'quiz', xp: 80,
+          questions: [
+            { q: 'Which status returned after creating a resource?', options: ['200','201','202','301'], answer: 1 },
+            { q: 'A 422 status means...', options: ['Not found','Unprocessable Entity','OK','Server error'], answer: 1 },
+            { q: 'REST is...', options: ['A library','An HTTP API style','A database','Vibes'], answer: 1 },
+            { q: 'Where should sensitive secrets live?', options: ['Source code','env vars / secrets manager','Frontend JS','localStorage'], answer: 1 },
+          ]
+        }
+      ]
+    },
+    {
+      level: 5, title: 'Authentication', xpRequired: 900, xpReward: 250,
+      lessons: [
+        {
+          id: 'auth-1', title: 'Passwords, hashing, JWT', type: 'lesson', xp: 40,
+          content: `<h2>Never store passwords in plain text</h2>
+<div class="code-block"><pre><code>const bcrypt = require('bcryptjs');
+const hash = await bcrypt.hash(password, 10);
+const ok   = await bcrypt.compare(password, hash);
+
+const jwt = require('jsonwebtoken');
+const token = jwt.sign({ userId: 1 }, process.env.JWT_SECRET, { expiresIn: '7d' });
+const data  = jwt.verify(token, process.env.JWT_SECRET);</code></pre></div>
+<div class="term-box"><strong>📖 Tech Term:</strong> <em>Bearer token</em> — sent as <code>Authorization: Bearer &lt;token&gt;</code>. The server treats the holder as authenticated.</div>`,
+          tryCode: null
+        },
+        {
+          id: 'auth-quiz', title: 'Auth Quiz', type: 'quiz', xp: 70,
+          questions: [
+            { q: 'Why hash passwords?', options: ['To compress them','So a leaked DB does not expose plain passwords','To make them shorter','For SEO'], answer: 1 },
+            { q: 'JWT stands for...', options: ['JS Web Tag','JSON Web Token','Java Web Tool','None'], answer: 1 },
+            { q: 'Where do you put the JWT in requests?', options: ['URL','Authorization header','Cookies only','Form field'], answer: 1 },
+            { q: 'Salt prevents...', options: ['SQL injection','Rainbow-table attacks','SSL errors','Cache misses'], answer: 1 },
+          ]
+        }
+      ]
+    },
+    {
+      level: 6, title: 'Server Project', xpRequired: 1150, xpReward: 300,
+      lessons: [
+        {
+          id: 'be-project', title: 'Project: Build a Tasks API', type: 'project', xp: 150,
+          desc: 'Build a small REST API: users sign up, log in, and CRUD their tasks.',
+          requirements: [
+            'POST /register and /login (with bcrypt + JWT)',
+            'JWT-protected /tasks routes (CRUD)',
+            'Each task belongs to its owner — no cross-user access',
+            'Validate input; return proper status codes',
+            'Use Postgres or SQLite for storage'
+          ],
+          hints: [
+            'Use express, jsonwebtoken, bcryptjs and a pg driver',
+            'Hash passwords on register, verify on login',
+            'Decode the token in middleware and put userId on req'
+          ],
+          starterCode: null
+        }
+      ]
+    },
+    { level: 7, title: 'Caching & Performance', xpRequired: 1350, xpReward: 300, lessons: [
+      { id: 'cache-1', title: 'Caching strategies', type: 'lesson', xp: 35,
+        content: `<h2>Cache where it counts</h2><p>Redis for sessions, computed results, rate limit counters. HTTP <code>Cache-Control</code> headers for browsers. Always invalidate or expire — stale data is worse than slow data.</p>`, tryCode: null },
+      { id: 'cache-quiz', title: 'Caching Quiz', type: 'quiz', xp: 60, questions: [
+        { q: 'Which is best for ephemeral session data?', options: ['Postgres','Redis','S3','Local file'], answer: 1 },
+        { q: 'A cache hit ratio of 95% means...', options: ['5% of requests bypass cache','Bad','Cache is broken','Misses dominate'], answer: 0 },
+        { q: 'TTL stands for...', options: ['Time To Live','Total Tag Length','Truncated TLS','Tag-Time Lookup'], answer: 0 },
+      ]}
+    ]},
+    { level: 8, title: 'Deployment', xpRequired: 1650, xpReward: 300, lessons: [
+      { id: 'deploy-be-1', title: 'Containers & env vars', type: 'lesson', xp: 35,
+        content: `<h2>Ship a Node app with Docker</h2><div class="code-block"><pre><code>FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY . .
+EXPOSE 3000
+CMD ["node", "src/server.js"]</code></pre></div><p>Inject secrets via env vars at deploy time — never bake them in the image.</p>`, tryCode: null },
+      { id: 'deploy-be-quiz', title: 'Deployment Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'Where should JWT_SECRET come from in production?', options: ['Hard-coded','Env var / secrets manager','Frontend code','URL'], answer: 1 },
+        { q: 'Which is true about Docker images?', options: ['They include the build host kernel','They run app + dependencies in isolation','They run inside browsers','They are databases'], answer: 1 },
+        { q: 'A health-check endpoint helps...', options: ['Load balancers route only to healthy instances','Compress responses','Generate ads','Improve CSS'], answer: 0 },
+      ]}
+    ]},
+    { level: 9, title: 'Observability & Testing', xpRequired: 1950, xpReward: 350, lessons: [
+      { id: 'obs-1', title: 'Logs, metrics, traces', type: 'lesson', xp: 40,
+        content: `<h2>Three pillars</h2><ul><li><strong>Logs</strong> — what happened (structured JSON, not console.log)</li><li><strong>Metrics</strong> — counters, gauges, histograms (Prometheus)</li><li><strong>Traces</strong> — how requests flow across services</li></ul>`, tryCode: null },
+      { id: 'obs-quiz', title: 'Observability Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'p95 latency means...', options: ['Average','95% of requests are at or below this','Top 5%','Median'], answer: 1 },
+        { q: 'Structured logs are good because...', options: ['They are pretty','They are searchable / parsable','They use colors','They take more space'], answer: 1 },
+        { q: 'A trace shows...', options: ['Just one log line','How a request fans out across services','CSS rules','Cron schedule'], answer: 1 },
+      ]}
+    ]},
+    { level: 10, title: 'Senior Backend Project', xpRequired: 2300, xpReward: 500, lessons: [
+      { id: 'be-senior', title: '🏆 FINAL: Multi-tenant SaaS Backend', type: 'project', xp: 200,
+        desc: 'Build a production-quality backend: auth, multi-tenancy, RBAC, rate limiting, structured logs, tests, and a CI pipeline.',
+        requirements: ['JWT auth with refresh tokens','Tenant isolation in queries','Role-based authorization (admin / user)','Rate limiting and request validation','Structured JSON logs','Postgres migrations','Unit + integration tests','CI: lint + test on every push','Dockerfile + docker-compose for local dev'],
+        hints: ['Pick a niche (todo SaaS, blog SaaS, etc.)','Add migrations from day one','Cover the happy paths with integration tests'],
+        starterCode: null
+      }
+    ]}
+  ]
+};
+
+// ── ML CURRICULUM ─────────────────────────────
+SB.curriculum.ml = {
+  levels: [
+    { level: 1, title: 'Python for ML', xpRequired: 0, xpReward: 150, lessons: [
+      { id: 'ml-1', title: 'Python in 5 minutes', type: 'lesson', xp: 25,
+        content: `<h2>The Python you need</h2><div class="code-block"><pre><code># Variables, lists, dicts
+ages = [25, 30, 35]
+user = { "name": "Aynur", "age": 28 }
+
+# List comprehensions
+squares = [x*x for x in range(10)]
+
+# Functions
+def mean(xs):
+    return sum(xs) / len(xs)
+
+print(mean(ages))</code></pre></div>`, tryCode: null },
+      { id: 'ml-2', title: 'NumPy basics', type: 'lesson', xp: 30,
+        content: `<h2>NumPy = fast arrays</h2><div class="code-block"><pre><code>import numpy as np
+a = np.array([1, 2, 3, 4])
+print(a * 2)         # [2 4 6 8]
+print(a.mean())      # 2.5
+m = np.random.rand(3, 3)
+print(m @ m.T)       # matrix multiply</code></pre></div>`, tryCode: null },
+      { id: 'ml-quiz', title: 'ML Basics Quiz', type: 'quiz', xp: 60, questions: [
+        { q: 'NumPy arrays are typically...', options: ['Slower than Python lists','Faster, vectorized over fixed types','GPU-only','Single-dimension only'], answer: 1 },
+        { q: 'Supervised learning needs...', options: ['No data','Labels for training examples','Only images','A GPU'], answer: 1 },
+        { q: 'Overfitting means...', options: ['Model is too simple','Model memorizes training data and fails on new data','Loss = 0 always','Training was too short'], answer: 1 },
+        { q: 'Which library is Pythonic data manipulation?', options: ['pandas','express','React','torch only'], answer: 0 },
+      ]}
+    ]},
+    { level: 2, title: 'Stats & Probability', xpRequired: 150, xpReward: 200, lessons: [
+      { id: 'stats-1', title: 'Mean, variance, distributions', type: 'lesson', xp: 30,
+        content: `<h2>The numbers behind ML</h2><p>Mean and variance describe spread. The <em>normal</em> distribution shows up everywhere. <em>Bayes</em>' rule lets you update beliefs from evidence.</p>`, tryCode: null },
+      { id: 'stats-quiz', title: 'Stats Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'Variance measures...', options: ['Center of data','Spread around the mean','Skew','Time'], answer: 1 },
+        { q: 'p-value of 0.01 in a t-test means...', options: ['1% chance of seeing this data if H0 is true','99% confident','Always significant','Random'], answer: 0 },
+        { q: 'A standard normal has mean and std of...', options: ['0 and 1','1 and 0','5 and 1','0 and 0'], answer: 0 },
+      ]}
+    ]},
+    { level: 3, title: 'Pandas for Data', xpRequired: 350, xpReward: 250, lessons: [
+      { id: 'pandas-1', title: 'DataFrames & series', type: 'lesson', xp: 35,
+        content: `<h2>Pandas</h2><div class="code-block"><pre><code>import pandas as pd
+df = pd.read_csv('sales.csv')
+df = df[df.amount &gt; 0]
+df['profit'] = df.revenue - df.cost
+print(df.groupby('region').profit.sum())</code></pre></div>`, tryCode: null },
+      { id: 'pandas-quiz', title: 'Pandas Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'Which method loads a CSV?', options: ['pd.read_csv','pd.load_csv','pd.csv','pd.open'], answer: 0 },
+        { q: '.groupby(col).sum() does...', options: ['Random sample','Aggregate sum per group','Sort','Drops rows'], answer: 1 },
+        { q: 'NaN means...', options: ['Zero','Missing value','Negative','True'], answer: 1 },
+      ]}
+    ]},
+    { level: 4, title: 'Classical ML (scikit-learn)', xpRequired: 600, xpReward: 300, lessons: [
+      { id: 'sklearn-1', title: 'Your first model', type: 'lesson', xp: 40,
+        content: `<h2>scikit-learn workflow</h2><div class="code-block"><pre><code>from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+model = LogisticRegression().fit(X_train, y_train)
+print(model.score(X_test, y_test))</code></pre></div>`, tryCode: null },
+      { id: 'sklearn-quiz', title: 'scikit-learn Quiz', type: 'quiz', xp: 80, questions: [
+        { q: 'train_test_split prevents...', options: ['Overfitting evaluation','Pretty plots','Imports','Loss'], answer: 0 },
+        { q: 'A confusion matrix shows...', options: ['Errors per class','Loss curve','Weights','Embeddings'], answer: 0 },
+        { q: 'Cross-validation does...', options: ['Splits data into k folds for robust scoring','Encrypts data','Removes outliers','Plots data'], answer: 0 },
+      ]}
+    ]},
+    { level: 5, title: 'Deep Learning', xpRequired: 900, xpReward: 250, lessons: [
+      { id: 'dl-1', title: 'Neural networks 101', type: 'lesson', xp: 40,
+        content: `<h2>A neural net is matmul + nonlinearity, stacked</h2><div class="code-block"><pre><code>import torch
+import torch.nn as nn
+
+class Net(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(784, 128)
+        self.fc2 = nn.Linear(128, 10)
+    def forward(self, x):
+        return self.fc2(torch.relu(self.fc1(x)))</code></pre></div>`, tryCode: null },
+      { id: 'dl-quiz', title: 'Deep Learning Quiz', type: 'quiz', xp: 80, questions: [
+        { q: 'ReLU is...', options: ['max(0,x)','sigmoid','tanh','identity'], answer: 0 },
+        { q: 'Gradient descent updates weights to...', options: ['Maximize loss','Minimize loss','Stay constant','Multiply features'], answer: 1 },
+        { q: 'Backpropagation computes...', options: ['Gradients via the chain rule','Forward pass','Loss only','Data augmentation'], answer: 0 },
+      ]}
+    ]},
+    { level: 6, title: 'Mini Project', xpRequired: 1150, xpReward: 300, lessons: [
+      { id: 'ml-project', title: 'Project: Predict Titanic survival', type: 'project', xp: 150,
+        desc: 'Classic Kaggle starter: clean the data, train a model, beat 78% accuracy.',
+        requirements: ['Handle missing values','Encode categorical features','Train a baseline (logistic regression)','Try a tree-based model and compare','Show feature importances'],
+        hints: ['pandas for cleaning, scikit-learn for modeling','Use train_test_split with random_state for reproducibility'],
+        starterCode: null
+      }
+    ]},
+    { level: 7, title: 'NLP & Embeddings', xpRequired: 1350, xpReward: 300, lessons: [
+      { id: 'nlp-1', title: 'Word embeddings & transformers', type: 'lesson', xp: 35,
+        content: `<h2>Text → numbers</h2><p>Embeddings turn words into dense vectors that capture meaning. Transformers (BERT, GPT) use attention over those vectors and are now the default for NLP.</p>`, tryCode: null },
+      { id: 'nlp-quiz', title: 'NLP Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'Tokenization splits text into...', options: ['Bytes','Tokens (words/subwords)','Vectors','Files'], answer: 1 },
+        { q: 'Attention helps a model...', options: ['Skip data','Focus on relevant input parts','Train faster only','Sleep'], answer: 1 },
+        { q: 'BERT is...', options: ['A transformer encoder','A CNN','A database','An optimizer'], answer: 0 },
+      ]}
+    ]},
+    { level: 8, title: 'Deploying ML', xpRequired: 1650, xpReward: 300, lessons: [
+      { id: 'mldeploy-1', title: 'Serving models as APIs', type: 'lesson', xp: 35,
+        content: `<h2>Wrap a model in FastAPI</h2><div class="code-block"><pre><code>from fastapi import FastAPI
+import joblib
+app = FastAPI()
+model = joblib.load('model.pkl')
+
+@app.post('/predict')
+def predict(payload: dict):
+    return { 'pred': model.predict([payload['features']])[0] }</code></pre></div>`, tryCode: null },
+      { id: 'mldeploy-quiz', title: 'ML Deploy Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'Why version your models?', options: ['SEO','To roll back when the new one underperforms','Vibes','Disk space'], answer: 1 },
+        { q: 'A drift in production means...', options: ['Inputs are changing distribution','Server is slow','Logs are big','Data is encrypted'], answer: 0 },
+        { q: 'Latency matters because...', options: ['Users wait','GPUs heat up','Code is too clean','None'], answer: 0 },
+      ]}
+    ]},
+    { level: 9, title: 'MLOps', xpRequired: 1950, xpReward: 350, lessons: [
+      { id: 'mlops-1', title: 'Pipelines, tracking, monitoring', type: 'lesson', xp: 40,
+        content: `<h2>Real ML is mostly engineering</h2><ul><li>Track experiments (MLflow, Weights &amp; Biases)</li><li>Reproducible data pipelines (DVC, Airflow)</li><li>Monitor input drift &amp; metric decay in prod</li></ul>`, tryCode: null },
+      { id: 'mlops-quiz', title: 'MLOps Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'Experiment tracking is for...', options: ['Reproducing past runs','Painting','Lossless audio','SEO'], answer: 0 },
+        { q: 'Feature store solves...', options: ['Skew between training and serving features','GPU heat','UI design','Database backups'], answer: 0 },
+        { q: 'Continuous training means...', options: ['Retraining models as data evolves','Always run training, never stop','One-shot training','No retraining'], answer: 0 },
+      ]}
+    ]},
+    { level: 10, title: 'Senior ML Project', xpRequired: 2300, xpReward: 500, lessons: [
+      { id: 'ml-senior', title: '🏆 FINAL: End-to-end ML system', type: 'project', xp: 200,
+        desc: 'Pick a dataset and ship an end-to-end ML system: data pipeline, training, model registry, served via API, with monitoring.',
+        requirements: ['Reproducible training pipeline','Tracked experiments','Versioned model registry','Inference API with metrics','Drift / quality monitoring','Documented runbook for incidents'],
+        hints: ['Pick a small, real dataset','Iterate baseline → better model → ship → monitor','Lean on cloud free tiers'], starterCode: null }
+    ]}
+  ]
+};
+
+// ── DEVOPS CURRICULUM ─────────────────────────
+SB.curriculum.devops = {
+  levels: [
+    { level: 1, title: 'Linux Foundations', xpRequired: 0, xpReward: 150, lessons: [
+      { id: 'linux-1', title: 'Shell basics', type: 'lesson', xp: 25,
+        content: `<h2>Survive a Linux shell</h2><div class="code-block"><pre><code>pwd           # where am I
+ls -la        # list everything, with details
+cd /var/log   # change directory
+cat app.log | grep ERROR | tail -20
+ps aux | grep node
+sudo systemctl status nginx</code></pre></div>`, tryCode: null },
+      { id: 'linux-quiz', title: 'Linux Quiz', type: 'quiz', xp: 60, questions: [
+        { q: 'Which command shows running processes?', options: ['ls','ps','cat','find'], answer: 1 },
+        { q: 'chmod 755 means...', options: ['rwxr-xr-x','rw-r--r--','rwxrwxrwx','no perms'], answer: 0 },
+        { q: '/var/log usually contains...', options: ['User documents','System and app logs','Source code','Configs only'], answer: 1 },
+        { q: 'systemd manages...', options: ['Files only','Services and units','Memory only','Networking only'], answer: 1 },
+      ]}
+    ]},
+    { level: 2, title: 'Docker', xpRequired: 150, xpReward: 200, lessons: [
+      { id: 'docker-1', title: 'Containers in 10 minutes', type: 'lesson', xp: 35,
+        content: `<h2>Run anything anywhere</h2><div class="code-block"><pre><code>docker run -it --rm alpine sh
+docker build -t my-app .
+docker run -p 3000:3000 my-app
+docker ps        # list running
+docker logs &lt;id&gt;</code></pre></div>`, tryCode: null },
+      { id: 'docker-2', title: 'Dockerfiles & multi-stage builds', type: 'lesson', xp: 35,
+        content: `<h2>Multi-stage</h2><div class="code-block"><pre><code>FROM node:20-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+COPY package*.json ./
+RUN npm ci --omit=dev
+CMD ["node", "dist/server.js"]</code></pre></div>`, tryCode: null },
+      { id: 'docker-quiz', title: 'Docker Quiz', type: 'quiz', xp: 80, questions: [
+        { q: 'An image is...', options: ['A running container','A static template containers are built from','A network','A DB'], answer: 1 },
+        { q: 'docker-compose is for...', options: ['Multi-container apps in one file','Database migrations only','CSS','Authentication'], answer: 0 },
+        { q: 'Multi-stage builds reduce...', options: ['Final image size','Network latency','CPU','Memory leaks'], answer: 0 },
+      ]}
+    ]},
+    { level: 3, title: 'CI/CD', xpRequired: 350, xpReward: 250, lessons: [
+      { id: 'cicd-1', title: 'GitHub Actions', type: 'lesson', xp: 35,
+        content: `<h2>Pipeline as code</h2><div class="code-block"><pre><code>name: CI
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm ci
+      - run: npm test</code></pre></div>`, tryCode: null },
+      { id: 'cicd-quiz', title: 'CI/CD Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'CI/CD stands for...', options: ['Code Integration / Code Deployment','Continuous Integration / Continuous Delivery','Compile/Distribute','Cron/Daemon'], answer: 1 },
+        { q: 'A pipeline should be...', options: ['Manual','Automated, fast, reliable','Run weekly only','Hidden'], answer: 1 },
+        { q: 'Secrets in GitHub Actions live in...', options: ['Plain workflow yml','Repo Settings → Secrets','Public README','Slack'], answer: 1 },
+      ]}
+    ]},
+    { level: 4, title: 'Kubernetes', xpRequired: 600, xpReward: 300, lessons: [
+      { id: 'k8s-1', title: 'Pods, deployments, services', type: 'lesson', xp: 40,
+        content: `<h2>K8s in one page</h2><div class="code-block"><pre><code>apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: api } }
+  template:
+    metadata: { labels: { app: api } }
+    spec:
+      containers:
+        - name: api
+          image: my-org/api:1.2.3
+          ports: [{ containerPort: 3000 }]</code></pre></div>`, tryCode: null },
+      { id: 'k8s-quiz', title: 'Kubernetes Quiz', type: 'quiz', xp: 80, questions: [
+        { q: 'A Pod is...', options: ['A node','One or more containers sharing network/storage','A namespace','A secret'], answer: 1 },
+        { q: 'A Deployment...', options: ['Manages a replicated set of pods','Stores files','Routes DNS','Creates clusters'], answer: 0 },
+        { q: 'A Service provides...', options: ['Stable network endpoint to pods','GPU drivers','Logs','Cron jobs'], answer: 0 },
+      ]}
+    ]},
+    { level: 5, title: 'Cloud Basics', xpRequired: 900, xpReward: 250, lessons: [
+      { id: 'cloud-1', title: 'AWS / GCP fundamentals', type: 'lesson', xp: 40,
+        content: `<h2>What every cloud has</h2><ul><li>Compute (EC2, Compute Engine, ECS, GKE)</li><li>Object storage (S3, GCS)</li><li>Managed DBs (RDS, Cloud SQL)</li><li>IAM, VPC, monitoring &amp; logging</li></ul>`, tryCode: null },
+      { id: 'cloud-quiz', title: 'Cloud Quiz', type: 'quiz', xp: 80, questions: [
+        { q: 'IAM is for...', options: ['Networking','Identity &amp; access management','Caching','Pricing'], answer: 1 },
+        { q: 'A VPC is...', options: ['A virtual private cloud — isolated network','A database','A type of pod','A CI tool'], answer: 0 },
+        { q: 'Cold starts affect...', options: ['Serverless functions','Databases only','HTML','Logs'], answer: 0 },
+      ]}
+    ]},
+    { level: 6, title: 'Infrastructure as Code', xpRequired: 1150, xpReward: 300, lessons: [
+      { id: 'iac-1', title: 'Terraform basics', type: 'lesson', xp: 35,
+        content: `<h2>Declare your infra</h2><div class="code-block"><pre><code>resource "aws_s3_bucket" "logs" {
+  bucket = "my-org-logs"
+  acl    = "private"
+}</code></pre></div><p><code>terraform plan</code> shows the diff; <code>terraform apply</code> makes it real.</p>`, tryCode: null },
+      { id: 'iac-quiz', title: 'IaC Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'Terraform state tracks...', options: ['What is currently provisioned','UI styles','Logs','Builds'], answer: 0 },
+        { q: 'Plan before apply because...', options: ['It is fun','It shows the change before it happens','It is mandatory','It encrypts secrets'], answer: 1 },
+        { q: 'IaC means...', options: ['Infrastructure as Code','Internet about Cloud','Idle apps for Cloud','None'], answer: 0 },
+      ]}
+    ]},
+    { level: 7, title: 'Monitoring & SRE', xpRequired: 1350, xpReward: 300, lessons: [
+      { id: 'sre-1', title: 'SLOs, SLIs, error budgets', type: 'lesson', xp: 35,
+        content: `<h2>Reliability with math</h2><ul><li><strong>SLI</strong> — what we measure (e.g. p99 latency)</li><li><strong>SLO</strong> — the target (e.g. p99 &lt; 250ms)</li><li><strong>Error budget</strong> — allowed downtime per period; spend it on risk</li></ul>`, tryCode: null },
+      { id: 'sre-quiz', title: 'SRE Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'An error budget is...', options: ['A spending cap on AWS','How much unreliability you can afford','Linter rules','None'], answer: 1 },
+        { q: 'Prometheus is...', options: ['A metrics system','A CI tool','A CSS framework','A queue'], answer: 0 },
+        { q: 'Postmortems should be...', options: ['Blameless and actionable','Punishment','Internal only forever','Quick &amp; vague'], answer: 0 },
+      ]}
+    ]},
+    { level: 8, title: 'Security Hardening', xpRequired: 1650, xpReward: 300, lessons: [
+      { id: 'sec-1', title: 'Least privilege & secrets', type: 'lesson', xp: 35,
+        content: `<h2>Stop leaking secrets</h2><ul><li>Smallest IAM roles that work</li><li>Rotate credentials; use short-lived tokens</li><li>Scan images and dependencies</li><li>Use a secrets manager — not .env in git</li></ul>`, tryCode: null },
+      { id: 'sec-quiz', title: 'Security Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'Least privilege means...', options: ['Give everyone admin','Grant only what is needed','Disable IAM','Use root'], answer: 1 },
+        { q: 'Secrets in repo are...', options: ['Convenient and safe','A breach waiting to happen','Encrypted by GitHub by default','OK if rotated'], answer: 1 },
+        { q: 'TLS protects...', options: ['Data in transit','Data at rest','Database schema','Disk space'], answer: 0 },
+      ]}
+    ]},
+    { level: 9, title: 'Cost & Scale', xpRequired: 1950, xpReward: 350, lessons: [
+      { id: 'cost-1', title: 'FinOps & autoscaling', type: 'lesson', xp: 35,
+        content: `<h2>Right-size, right-bill</h2><p>Autoscale on demand. Use spot/preemptible for non-critical jobs. Tag everything so finance can attribute costs.</p>`, tryCode: null },
+      { id: 'cost-quiz', title: 'Cost Quiz', type: 'quiz', xp: 70, questions: [
+        { q: 'Horizontal scaling is...', options: ['Bigger machine','More machines','Faster CPU','None'], answer: 1 },
+        { q: 'Spot instances are...', options: ['Cheaper but interruptible','Premium tier','Fast SSD','Free'], answer: 0 },
+        { q: 'Tagging resources helps...', options: ['Cost attribution and ownership','SEO','UI design','Crypto'], answer: 0 },
+      ]}
+    ]},
+    { level: 10, title: 'Senior DevOps Project', xpRequired: 2300, xpReward: 500, lessons: [
+      { id: 'devops-senior', title: '🏆 FINAL: Ship a production-grade platform', type: 'project', xp: 200,
+        desc: 'Stand up a small but real platform: app + DB, CI/CD, IaC, observability, alerts, runbooks.',
+        requirements: ['Terraform-managed infra','GitHub Actions CI/CD','Container registry + immutable tags','Prometheus + Grafana dashboards','Log aggregation','On-call runbook','Disaster-recovery plan'],
+        hints: ['Pick one cloud and one stack — depth over breadth','Document everything as if you will be on-call'],
+        starterCode: null }
+    ]}
+  ]
+};
+
+// ── Remaining branches — reuse Frontend ────────
+// (Fullstack reuses frontend by design; mobile/security/data
+// re-use frontend for now and can be expanded later.)
 SB.curriculum.fullstack = { levels: SB.curriculum.frontend.levels };
-SB.curriculum.ml = { levels: SB.curriculum.frontend.levels.map(l => ({...l})) };
-SB.curriculum.devops = { levels: SB.curriculum.frontend.levels.map(l => ({...l})) };
-SB.curriculum.mobile = { levels: SB.curriculum.frontend.levels.map(l => ({...l})) };
-SB.curriculum.security = { levels: SB.curriculum.frontend.levels.map(l => ({...l})) };
-SB.curriculum.data = { levels: SB.curriculum.frontend.levels.map(l => ({...l})) };
+SB.curriculum.mobile    = { levels: SB.curriculum.frontend.levels.map(l => ({...l})) };
+SB.curriculum.security  = { levels: SB.curriculum.frontend.levels.map(l => ({...l})) };
+SB.curriculum.data      = { levels: SB.curriculum.frontend.levels.map(l => ({...l})) };
 
 // ── TECHNICAL TERMS ───────────────────────────
 SB.techTerms = [

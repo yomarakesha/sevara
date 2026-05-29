@@ -103,6 +103,7 @@ Views.login = ({ t }) => `
         <label>${t('password')}</label>
         <input id="l-pass" type="password" class="form-input" placeholder="••••••••" required>
       </div>
+      <a class="auth-helper-link" onclick="App.navigate('forgot')">${t('forgotPassword')}</a>
       <div id="login-error" class="form-error"></div>
       <button type="submit" class="btn btn-primary btn-full">${t('signIn')} →</button>
     </form>
@@ -110,6 +111,49 @@ Views.login = ({ t }) => `
     <div class="auth-demo">
       <p>🧪 Demo: use any email + password (min 6 chars) to register</p>
     </div>
+  </div>
+</div>`;
+
+Views.forgot = ({ t }) => `
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo"><span class="logo-icon">SB</span><span>SillBridge</span></div>
+    <h2>🔑 ${t('forgotPassword')}</h2>
+    <p class="auth-sub">Enter the email tied to your account — we'll send you a reset link.</p>
+    <form id="forgot-form">
+      <div class="form-group">
+        <label>${t('email')}</label>
+        <input id="f-email" type="email" class="form-input" placeholder="your@email.com" required>
+      </div>
+      <div id="forgot-error"   class="form-error"></div>
+      <div id="forgot-success" class="form-success" style="display:none"></div>
+      <button type="submit" class="btn btn-primary btn-full">Send reset link →</button>
+    </form>
+    <p class="auth-link"><a onclick="App.navigate('login')">← Back to ${t('signIn')}</a></p>
+  </div>
+</div>`;
+
+Views.reset = ({ t, resetToken }) => `
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo"><span class="logo-icon">SB</span><span>SillBridge</span></div>
+    <h2>🔒 Choose a new password</h2>
+    <p class="auth-sub">Set your new password to regain access.</p>
+    <form id="reset-form">
+      <input type="hidden" id="reset-token" value="${escHtml(resetToken || '')}">
+      <div class="form-group">
+        <label>New ${t('password')}</label>
+        <input id="reset-pass" type="password" class="form-input" placeholder="Min 6 characters" required>
+      </div>
+      <div class="form-group">
+        <label>${t('confirmPassword')}</label>
+        <input id="reset-pass2" type="password" class="form-input" placeholder="Repeat password" required>
+      </div>
+      <div id="reset-error"   class="form-error"></div>
+      <div id="reset-success" class="form-success" style="display:none"></div>
+      <button type="submit" class="btn btn-primary btn-full">Reset password →</button>
+    </form>
+    <p class="auth-link"><a onclick="App.navigate('login')">← Back to ${t('signIn')}</a></p>
   </div>
 </div>`;
 
@@ -332,25 +376,34 @@ Views.lessonView = ({ lesson, level, user, t, curriculum, levelIdx, lessonIdx })
     body = `
     <div class="lesson-content">
       ${lesson.content || ''}
-      ${lesson.tryCode ? `
+      ${lesson.tryCode ? (() => {
+        const starter = lesson.tryCode.starter || '';
+        // Treat anything that starts with "<" as HTML — run with live preview.
+        const mode = (lesson.tryCode.mode) || (starter.trim().startsWith('<') ? 'html' : 'js');
+        return `
       <div class="try-it-section">
         <h3>👩‍💻 Try It Yourself</h3>
         <p class="try-task"><strong>Task:</strong> ${escHtml(lesson.tryCode.task)}</p>
         <div class="code-editor-wrap">
           <div class="editor-header">
-            <span>${t('codeEditor')}</span>
+            <span>${t('codeEditor')} <span class="editor-mode">[${mode.toUpperCase()}]</span></span>
             <div>
               <button class="btn btn-sm btn-primary" id="run-code-btn">▶ ${t('runCode')}</button>
               <button class="btn btn-sm btn-ghost" id="reset-code-btn">${t('reset')}</button>
             </div>
           </div>
-          <textarea id="code-editor" class="code-editor" spellcheck="false">${escHtml(lesson.tryCode.starter)}</textarea>
+          <textarea id="code-editor" class="code-editor" spellcheck="false" data-mode="${mode}">${escHtml(starter)}</textarea>
+          <div class="code-preview-wrap">
+            <div class="output-label">${mode === 'html' ? '🖼️ Live Preview' : '🖥️ Sandbox'}:</div>
+            <div id="code-preview" class="code-preview"></div>
+          </div>
           <div class="output-section">
             <div class="output-label">${t('output')}:</div>
             <div id="code-output" class="code-output"></div>
           </div>
         </div>
-      </div>` : ''}
+      </div>`;
+      })() : ''}
       ${!isCompleted ? `<button class="btn btn-primary btn-lg" id="mark-done-btn">✅ Mark as Complete (+${lesson.xp} XP)</button>` : `<div class="completed-badge">✅ Completed!</div>`}
     </div>`;
   } else if (lesson.type === 'quiz') {
@@ -440,8 +493,70 @@ Views.quizResult = ({ score, passed, correct, total, t }) => `
            : `<button class="btn btn-secondary" id="quiz-retry-btn">Try Again</button>`}
 </div>`;
 
+// ── ACTIVITY GRAPH (GitHub-style) ─────────────
+// Renders a 7×N grid where each cell is one day, colored by XP gained.
+Views.activityGraph = (activity, days = 365) => {
+  // Build a Map: 'YYYY-MM-DD' -> xp
+  const map = new Map((activity || []).map(a => [a.day, a.xp]));
+  const cells = [];
+  const today = new Date();
+  // Round to local midnight
+  today.setHours(0, 0, 0, 0);
+
+  // Start from `days - 1` days ago, so the rightmost column is current week.
+  const start = new Date(today);
+  start.setDate(start.getDate() - (days - 1));
+  // Align the start to a Sunday so each column is one ISO week (Sun→Sat).
+  start.setDate(start.getDate() - start.getDay());
+
+  // Build a contiguous list of date strings from start → today inclusive
+  let totalXP = 0;
+  let activeDays = 0;
+  let longestStreak = 0;
+  let currentStreak = 0;
+  let cur = new Date(start);
+  while (cur <= today) {
+    const y = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, '0');
+    const d = String(cur.getDate()).padStart(2, '0');
+    const key = `${y}-${m}-${d}`;
+    const xp = map.get(key) || 0;
+    const cls = xp === 0  ? ''
+              : xp < 30   ? 'l1'
+              : xp < 80   ? 'l2'
+              : xp < 150  ? 'l3'
+              : 'l4';
+    cells.push(`<div class="activity-cell ${cls}" title="${key}: ${xp} XP"></div>`);
+    if (xp > 0) { activeDays++; totalXP += xp; currentStreak++; longestStreak = Math.max(longestStreak, currentStreak); }
+    else currentStreak = 0;
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  return `
+  <div class="activity-graph">
+    <h3>📈 Learning Activity (last ${days} days)</h3>
+    <div class="activity-summary">
+      <span>⚡ <strong>${totalXP}</strong> XP earned</span>
+      <span>🗓️ <strong>${activeDays}</strong> active days</span>
+      <span>🔥 longest streak: <strong>${longestStreak}</strong></span>
+    </div>
+    <div class="activity-scroll">
+      <div class="activity-grid">${cells.join('')}</div>
+    </div>
+    <div class="activity-legend">
+      Less
+      <span class="activity-cell"></span>
+      <span class="activity-cell l1"></span>
+      <span class="activity-cell l2"></span>
+      <span class="activity-cell l3"></span>
+      <span class="activity-cell l4"></span>
+      More
+    </div>
+  </div>`;
+};
+
 // ── PROGRESS ─────────────────────────────────
-Views.progress = ({ t, user }) => {
+Views.progress = ({ t, user, activity }) => {
   if (!user) return Views.login({ t });
   const curriculum = user.branch ? SB.curriculum[user.branch] : SB.curriculum.frontend;
   const totalLessons = curriculum.levels.reduce((s, l) => s + l.lessons.length, 0);
@@ -452,7 +567,7 @@ Views.progress = ({ t, user }) => {
   return `
 <div class="progress-page">
   <h1>📊 ${t('progress')}</h1>
-  
+
   <div class="stats-row">
     <div class="stat-card"><div class="stat-icon">⚡</div><div class="stat-val">${user.xp}</div><div class="stat-label">${t('totalXP')}</div></div>
     <div class="stat-card"><div class="stat-icon">🎯</div><div class="stat-val">${user.level}/10</div><div class="stat-label">${t('level')}</div></div>
@@ -461,6 +576,8 @@ Views.progress = ({ t, user }) => {
     <div class="stat-card"><div class="stat-icon">🏗️</div><div class="stat-val">${projectCount}</div><div class="stat-label">Projects</div></div>
     <div class="stat-card"><div class="stat-icon">🔥</div><div class="stat-val">${user.streak}</div><div class="stat-label">${t('streak')}</div></div>
   </div>
+
+  ${Views.activityGraph(activity, 365)}
 
   <div class="progress-section">
     <h2>${t('currentLevel')} ${t('progress')}</h2>
@@ -629,17 +746,26 @@ Views.readme = ({ t }) => `
 </div>`;
 
 // ── LEADERBOARD ───────────────────────────────
-Views.leaderboard = ({ t, user, leaderboardData }) => {
+Views.leaderboard = ({ t, user, leaderboardData, leaderboardMode }) => {
   const leaders = leaderboardData || [];
   const myRank = leaders.findIndex(l => l.name === user?.name) + 1;
+  const mode = leaderboardMode || 'global';
 
   return `
 <div class="leaderboard-page">
   <h1>🏆 ${t('leaderboard')}</h1>
+  <div class="leaderboard-tabs">
+    <button class="tab-btn ${mode==='global'?'active':''}" data-lb-mode="global">🌍 Global Top 20</button>
+    <button class="tab-btn ${mode==='friends'?'active':''}" data-lb-mode="friends">👥 My Study Group</button>
+  </div>
   ${myRank ? `<p class="my-rank">Your rank: <strong>#${myRank}</strong></p>` : ''}
-  
+
   <div class="leaders-list">
-    ${leaders.length === 0 ? '<p class="empty-state">Be the first on the leaderboard! Start learning to earn XP.</p>' :
+    ${leaders.length === 0 ? `<p class="empty-state">${
+      mode === 'friends'
+        ? "Add a friend to see a private leaderboard. Head to the Friends page."
+        : "Be the first on the leaderboard! Start learning to earn XP."
+    }</p>` :
       leaders.map((l, i) => {
         const branch = SB.branches.find(b => b.id === l.branch);
         const medals = ['🥇','🥈','🥉'];
@@ -654,6 +780,65 @@ Views.leaderboard = ({ t, user, leaderboardData }) => {
           <div class="leader-badges">🏅 ${l.badges}</div>
         </div>`;
       }).join('')}
+  </div>
+</div>`;
+};
+
+// ── FRIENDS / STUDY GROUPS ────────────────────
+Views.friends = ({ t, user, friendsData }) => {
+  if (!user) return Views.login({ t });
+  const d = friendsData || { friends: [], incoming: [], outgoing: [] };
+
+  const row = (f, kind) => {
+    const branch = SB.branches.find(b => b.id === f.branch);
+    const actions = kind === 'incoming'
+      ? `<button class="btn btn-primary btn-sm" data-accept="${f.friendshipId}">Accept</button>
+         <button class="btn btn-ghost btn-sm"   data-remove="${f.friendshipId}">Decline</button>`
+      : kind === 'outgoing'
+      ? `<span style="color:var(--muted);font-size:14px;">Pending…</span>
+         <button class="btn btn-ghost btn-sm" data-remove="${f.friendshipId}">Cancel</button>`
+      : `<button class="btn btn-ghost btn-sm" data-remove="${f.friendshipId}">Remove</button>`;
+    return `<div class="friend-row">
+      <div class="friend-avatar">${escHtml((f.name||'?')[0].toUpperCase())}</div>
+      <div class="friend-info">
+        <strong>${escHtml(f.name)}</strong>
+        <small>${escHtml(f.email || '')}${branch ? ' · ' + branch.icon + ' ' + branch.label : ''}</small>
+      </div>
+      <div class="friend-stats">
+        <span>⚡ ${f.xp || 0} XP</span>
+        <span>🎯 L${f.level || 1}</span>
+      </div>
+      <div class="friend-actions">${actions}</div>
+    </div>`;
+  };
+
+  return `
+<div class="friends-page">
+  <h1>👥 Friends &amp; Study Groups</h1>
+  <p class="page-sub">Add learners by email and compare progress on a private leaderboard.</p>
+
+  <form id="add-friend-form" class="friends-add">
+    <input id="friend-email" type="email" class="form-input" placeholder="friend@email.com" required>
+    <button type="submit" class="btn btn-primary">Send request</button>
+  </form>
+  <div id="friends-error" class="form-error" style="display:none"></div>
+  <div id="friends-success" class="form-success" style="display:none"></div>
+
+  ${d.incoming.length ? `<div class="friends-section">
+    <h2>Incoming requests (${d.incoming.length})</h2>
+    ${d.incoming.map(f => row(f, 'incoming')).join('')}
+  </div>` : ''}
+
+  ${d.outgoing.length ? `<div class="friends-section">
+    <h2>Sent requests (${d.outgoing.length})</h2>
+    ${d.outgoing.map(f => row(f, 'outgoing')).join('')}
+  </div>` : ''}
+
+  <div class="friends-section">
+    <h2>My friends (${d.friends.length})</h2>
+    ${d.friends.length === 0
+      ? '<div class="friends-empty">No friends yet — invite someone by email above.</div>'
+      : d.friends.map(f => row(f, 'friend')).join('')}
   </div>
 </div>`;
 };

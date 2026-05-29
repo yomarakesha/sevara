@@ -6,11 +6,31 @@ const App = (() => {
   let currentView = 'home';
   let currentLesson = null;
   let toastQueue = [];
+  let resetToken = null;
+  let leaderboardMode = 'global';
 
   // ── INIT ──
   function init() {
     applyTheme();
     renderNav();
+
+    // Handle deep-links: #reset?token=...  for password reset emails.
+    const hash = location.hash || '';
+    if (hash.startsWith('#reset')) {
+      const tokenMatch = hash.match(/[?&]token=([A-Za-z0-9]+)/);
+      if (tokenMatch) {
+        resetToken = tokenMatch[1];
+        navigate('reset');
+        setupGlobalListeners();
+        return;
+      }
+    }
+    if (hash === '#forgot') {
+      navigate('forgot');
+      setupGlobalListeners();
+      return;
+    }
+
     const user = Store.getCurrentUser();
     if (!user) {
       navigate('landing');
@@ -41,7 +61,7 @@ const App = (() => {
   // ── ROUTER ──
   function navigate(view, pushState = true) {
     const user = Store.getCurrentUser();
-    const protectedViews = ['dashboard', 'learn', 'progress', 'interview', 'readme', 'leaderboard', 'branches', 'profile'];
+    const protectedViews = ['dashboard', 'learn', 'progress', 'interview', 'readme', 'leaderboard', 'branches', 'profile', 'friends'];
 
     if (protectedViews.includes(view) && !user) {
       view = 'login';
@@ -62,10 +82,20 @@ const App = (() => {
     // Nav
     renderNav();
 
-    // Pre-load leaderboard data if needed
+    // Pre-load data needed by certain views
     let leaderboardData = null;
+    let activity        = null;
+    let friendsData     = null;
     if (currentView === 'leaderboard') {
-      leaderboardData = await Store.getLeaderboard().catch(() => []);
+      leaderboardData = leaderboardMode === 'friends'
+        ? await Store.getFriendsLeaderboard().catch(() => [])
+        : await Store.getLeaderboard().catch(() => []);
+    }
+    if (currentView === 'progress') {
+      activity = await Store.getActivity(365).catch(() => []);
+    }
+    if (currentView === 'friends') {
+      friendsData = await Store.getFriends().catch(() => ({ friends: [], incoming: [], outgoing: [] }));
     }
 
     // Views
@@ -73,6 +103,8 @@ const App = (() => {
       landing: Views.landing,
       login: Views.login,
       register: Views.register,
+      forgot: Views.forgot,
+      reset: Views.reset,
       dashboard: Views.dashboard,
       branches: Views.branches,
       learn: Views.learn,
@@ -83,10 +115,11 @@ const App = (() => {
       profile: Views.profile,
       terms: Views.terms,
       games: Views.games,
+      friends: Views.friends,
     };
 
     const viewFn = views[currentView] || Views.landing;
-    root.innerHTML = viewFn({ user, t, lang, leaderboardData });
+    root.innerHTML = viewFn({ user, t, lang, leaderboardData, leaderboardMode, activity, friendsData, resetToken });
     attachViewEvents(currentView);
   }
 
@@ -128,6 +161,7 @@ const App = (() => {
             <a class="nav-item ${currentView==='interview'?'active':''}" data-view="interview">${t('interview')}</a>
             <a class="nav-item ${currentView==='readme'?'active':''}" data-view="readme">${t('readme')}</a>
             <a class="nav-item ${currentView==='games'?'active':''}" data-view="games">${t('playGame')}</a>
+            <a class="nav-item ${currentView==='friends'?'active':''}" data-view="friends">👥</a>
             <a class="nav-item ${currentView==='leaderboard'?'active':''}" data-view="leaderboard">${t('leaderboard')}</a>
           </nav>
           <div class="nav-actions">
@@ -171,6 +205,8 @@ const App = (() => {
   function attachViewEvents(view) {
     if (view === 'login') attachLoginEvents();
     if (view === 'register') attachRegisterEvents();
+    if (view === 'forgot') attachForgotEvents();
+    if (view === 'reset') attachResetEvents();
     if (view === 'branches') attachBranchEvents();
     if (view === 'learn') attachLearnEvents();
     if (view === 'interview') attachInterviewEvents();
@@ -178,9 +214,89 @@ const App = (() => {
     if (view === 'games') attachGameEvents();
     if (view === 'progress') attachProgressEvents();
     if (view === 'profile') attachProfileEvents();
+    if (view === 'friends') attachFriendsEvents();
+    if (view === 'leaderboard') attachLeaderboardEvents();
     attachQuizEvents();
     attachProjectEvents();
     attachCodeEditorEvents();
+  }
+
+  function attachForgotEvents() {
+    document.getElementById('forgot-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('f-email').value.trim();
+      const err = document.getElementById('forgot-error');
+      const ok  = document.getElementById('forgot-success');
+      err.style.display = 'none'; ok.style.display = 'none';
+      const btn = e.target.querySelector('button[type=submit]');
+      if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+      const res = await Store.forgotPassword(email);
+      if (btn) { btn.disabled = false; btn.textContent = 'Send reset link →'; }
+      if (res.error) { err.textContent = res.error; err.style.display = 'block'; return; }
+      ok.textContent = 'If that email is on record, we just sent a reset link. Check your inbox (or the server console in dev).';
+      ok.style.display = 'block';
+    });
+  }
+
+  function attachResetEvents() {
+    document.getElementById('reset-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const token = document.getElementById('reset-token').value;
+      const p1    = document.getElementById('reset-pass').value;
+      const p2    = document.getElementById('reset-pass2').value;
+      const err = document.getElementById('reset-error');
+      const ok  = document.getElementById('reset-success');
+      err.style.display = 'none'; ok.style.display = 'none';
+      if (p1 !== p2) { err.textContent = 'Passwords do not match'; err.style.display = 'block'; return; }
+      if (p1.length < 6) { err.textContent = 'Password must be at least 6 characters'; err.style.display = 'block'; return; }
+      if (!token) { err.textContent = 'Missing reset token — open the link from your email again.'; err.style.display = 'block'; return; }
+      const res = await Store.resetPassword(token, p1);
+      if (res.error) { err.textContent = res.error; err.style.display = 'block'; return; }
+      ok.textContent = 'Password updated. Redirecting to sign in…';
+      ok.style.display = 'block';
+      setTimeout(() => { resetToken = null; navigate('login'); }, 1500);
+    });
+  }
+
+  function attachLeaderboardEvents() {
+    document.querySelectorAll('[data-lb-mode]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        leaderboardMode = btn.dataset.lbMode;
+        renderApp();
+      });
+    });
+  }
+
+  function attachFriendsEvents() {
+    document.getElementById('add-friend-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('friend-email').value.trim();
+      const err = document.getElementById('friends-error');
+      const ok  = document.getElementById('friends-success');
+      err.style.display = 'none'; ok.style.display = 'none';
+      if (!email) return;
+      const res = await Store.addFriend(email);
+      if (res.error) { err.textContent = res.error; err.style.display = 'block'; return; }
+      ok.textContent = 'Friend request sent! ✉️';
+      ok.style.display = 'block';
+      document.getElementById('friend-email').value = '';
+      setTimeout(() => renderApp(), 600);
+    });
+
+    document.querySelectorAll('[data-accept]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const r = await Store.acceptFriend(b.dataset.accept);
+        if (r.error) toast(r.error, 'error');
+        else { toast('Friend added! 🤝', 'success'); renderApp(); }
+      });
+    });
+    document.querySelectorAll('[data-remove]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const r = await Store.removeFriend(b.dataset.remove);
+        if (r.error) toast(r.error, 'error');
+        else { toast('Removed', 'info'); renderApp(); }
+      });
+    });
   }
 
   function attachLoginEvents() {
@@ -378,31 +494,115 @@ const App = (() => {
   }
 
   function attachCodeEditorEvents() {
-    const runBtn = document.getElementById('run-code-btn');
+    const runBtn   = document.getElementById('run-code-btn');
     const resetBtn = document.getElementById('reset-code-btn');
-    const editor = document.getElementById('code-editor');
+    const editor   = document.getElementById('code-editor');
     if (!runBtn || !editor) return;
 
     const originalCode = editor.value;
+    const mode = editor.dataset.mode || detectCodeMode(originalCode);
+    const previewHost = document.getElementById('code-preview');
+
+    function runInIframe(html, mode) {
+      // Sandboxed iframe — JS runs in isolation, no parent access,
+      // no top-navigation. Console output is shipped back via postMessage.
+      const frame = document.createElement('iframe');
+      frame.sandbox = 'allow-scripts';
+      frame.className = 'code-runner-iframe';
+      frame.title = 'Code preview';
+      // Replace prior preview content
+      previewHost.innerHTML = '';
+      previewHost.appendChild(frame);
+
+      const payload = `<!doctype html><html><head><meta charset="utf-8"><style>
+          body{font-family:system-ui,sans-serif;margin:8px;color:#111}
+          pre{margin:0}
+        </style></head><body>${
+          mode === 'html'
+            ? html
+            : `<script>
+                 (function(){
+                   const send=(type,args)=>parent.postMessage({sb_runner:true,type,args:args.map(a=>{
+                     try{return typeof a==='object'?JSON.stringify(a):String(a);}catch(e){return String(a);}
+                   })},'*');
+                   const oc=console;
+                   console=new Proxy({},{get:(_,k)=>(...a)=>{send(k,a);try{(oc[k]||oc.log).apply(oc,a);}catch(e){}}});
+                   window.onerror=(msg)=>send('error',[msg]);
+                 })();
+                 try{
+                 ${html}
+                 }catch(e){console.error(e.message);}
+               <\/script>`
+        }</body></html>`;
+      frame.srcdoc = payload;
+    }
+
+    function runJsOnly(code) {
+      // For JS-only lessons we still capture logs in the parent output box.
+      const out = document.getElementById('code-output');
+      const logs = [];
+      const mockConsole = {
+        log:   (...a) => logs.push(a.map(String).join(' ')),
+        error: (...a) => logs.push('❌ ' + a.join(' ')),
+        warn:  (...a) => logs.push('⚠️ ' + a.join(' ')),
+      };
+      try {
+        // Run inside a fresh Function — slightly safer than eval, no access to local scope
+        new Function('console', code)(mockConsole);
+        out.innerHTML = `<div class="output-success">${
+          logs.length ? logs.map(l => `<div>${escHtml(l)}</div>`).join('') : '<em>No output</em>'
+        }</div>`;
+      } catch (err) {
+        out.innerHTML = `<div class="output-error">❌ ${escHtml(err.message)}</div>`;
+      }
+    }
+
     runBtn.addEventListener('click', () => {
       const code = editor.value;
       const output = document.getElementById('code-output');
-      try {
-        const logs = [];
-        const mockConsole = { log: (...args) => logs.push(args.map(String).join(' ')), error: (...args) => logs.push('❌ ' + args.join(' ')), warn: (...args) => logs.push('⚠️ ' + args.join(' ')) };
-        const fn = new Function('console', code);
-        fn(mockConsole);
-        output.innerHTML = `<div class="output-success">${logs.length ? logs.map(l => `<div>${escHtml(l)}</div>`).join('') : '<em>No output</em>'}</div>`;
-      } catch (err) {
-        output.innerHTML = `<div class="output-error">❌ ${escHtml(err.message)}</div>`;
+      if (output) output.innerHTML = '<em>Running…</em>';
+      if (mode === 'html' && previewHost) {
+        runInIframe(code, 'html');
+        if (output) output.innerHTML = '<em>Rendered above ↑</em>';
+      } else if (previewHost) {
+        // JS with iframe sandbox — better than the raw new Function approach
+        runInIframe(code, 'js');
+      } else {
+        runJsOnly(code);
       }
     });
 
     resetBtn?.addEventListener('click', () => {
       editor.value = originalCode;
-      document.getElementById('code-output').innerHTML = '';
+      const out = document.getElementById('code-output');
+      if (out) out.innerHTML = '';
+      if (previewHost) previewHost.innerHTML = '';
     });
   }
+
+  // Sniff whether the snippet is HTML or pure JS based on its opening character
+  function detectCodeMode(code) {
+    if (!code) return 'js';
+    const trimmed = code.trim();
+    return trimmed.startsWith('<') ? 'html' : 'js';
+  }
+
+  // Receive console output from sandboxed code iframes
+  window.addEventListener('message', (ev) => {
+    if (!ev.data || !ev.data.sb_runner) return;
+    const out = document.getElementById('code-output');
+    if (!out) return;
+    const cls = ev.data.type === 'error' ? 'output-error'
+              : ev.data.type === 'warn'  ? 'output-warn'
+              : 'output-success';
+    const prefix = ev.data.type === 'error' ? '❌ '
+                 : ev.data.type === 'warn'  ? '⚠️ '
+                 : '';
+    const line = document.createElement('div');
+    line.className = cls;
+    line.textContent = prefix + (ev.data.args || []).join(' ');
+    out.appendChild(line);
+  });
 
   function attachInterviewEvents() {
     document.querySelectorAll('.interview-q').forEach(q => {
